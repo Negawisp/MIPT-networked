@@ -1,3 +1,3 @@
 #!/bin/bash
-g++ client.cpp -g socket_tools.cpp -o client
-g++ server.cpp -g socket_tools.cpp -o server
+g++ -std=c++11 -pthread client.cpp -g session/session_set.cpp session/session.cpp socket_tools.cpp -o ./build/client
+g++ -std=c++11 server.cpp -g session/session_set.cpp session/session.cpp socket_tools.cpp -o ./build/server
