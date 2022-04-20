@@ -119,27 +119,48 @@ int main(int argc, const char **argv)
         break;
       case ENET_EVENT_TYPE_RECEIVE:
 
-        // If packet is from lobby
+        // packet is from lobby
         if (event.peer->address == lobby_addr) {
-          // If packet with server data
+          // packet with server data
           if (!is_started && enet_tool__is_server_data(event.packet)) {
             server_addr = enet_tool__parse_server_address(event.packet);
             server_peer = enet_tool__connect(server_addr, client_host);
             is_started = true;
           }
+
+          // packet with lobby time
+          if (enet_tool__is_systime(event.packet)) {
+            uint8_t* data = event.packet->data + 1;
+            uint32_t lobby_time = *(uint32_t*)data;
+            printf("Lobby time: %u (diff=%d)\n", lobby_time, (int32_t)(lobby_time - cur_time));
+          }
         }
 
-        // If packet is from server
+        // packet is from server
         if (event.peer->address == server_addr) {
-          // if packet with server time
+          // packet with server time
           if (enet_tool__is_systime(event.packet)) {
             uint8_t* data = event.packet->data + 1;
             uint32_t server_time = *(uint32_t*)data;
-            printf("Server time: %u (diff=%u)\n", server_time, enet_time_get() - server_time);
+            printf("Server time: %u (diff=%d)\n", server_time, (int32_t)(server_time- cur_time));
           }
 
-          // if packet with ping list
+          // packet with ping list
           if (enet_tool__is_ping_list(event.packet)) {
+            char* data = (char*)(event.packet->data + 1);
+            printf("%s\n", data);
+          }
+
+          // packet with player list
+          if (enet_tool__is_players_info(event.packet)) {
+            printf("Server sent players list.\n");
+            char* data = (char*)(event.packet->data + 1);
+            printf("%s\n", data);
+          }
+
+          // packet with new player info
+          if (enet_tool__is_player_info(event.packet)) {
+            printf("New player connected\n");
             char* data = (char*)(event.packet->data + 1);
             printf("%s\n", data);
           }
@@ -173,7 +194,6 @@ int main(int argc, const char **argv)
         if (!is_started && console_input == START_MESSAGE) {
           send_start_packet(lobby_peer);
         }
-
       }
     }
 

@@ -34,15 +34,23 @@ bool enet_tool__is_start(const ENetPacket* packet) {
 }
 
 bool enet_tool__is_systime(const ENetPacket* packet) {
-    return packet->data[0] & FLAG_IS_SYSTIME;
+  return packet->data[0] & FLAG_IS_SYSTIME;
 }
 
 bool enet_tool__is_ping_list(const ENetPacket* packet) {
-    return packet->data[0] & FLAG_IS_PING_LIST;
+  return packet->data[0] & FLAG_IS_PING_LIST;
 }
 
 bool enet_tool__is_server_data(const ENetPacket* packet) {
   return packet->data[0] & FLAG_IS_SERVER_DATA;
+}
+
+bool enet_tool__is_player_info(const ENetPacket* packet) {
+  return packet->data[0] & FLAG_IS_NEW_PLAYER;
+}
+
+bool enet_tool__is_players_info(const ENetPacket* packet) {
+  return packet->data[0] & FLAG_IS_PLAYER_LIST;
 }
 
 ENetAddress enet_tool__parse_server_address(const ENetPacket* packet) {

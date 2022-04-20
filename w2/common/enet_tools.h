@@ -11,6 +11,9 @@ bool enet_tool__is_start(const ENetPacket* packet);
 bool enet_tool__is_systime(const ENetPacket* packet);
 bool enet_tool__is_ping_list(const ENetPacket* packet);
 bool enet_tool__is_server_data(const ENetPacket* packet);
+bool enet_tool__is_player_info(const ENetPacket* packet);
+bool enet_tool__is_players_info(const ENetPacket* packet);
+
 ENetAddress enet_tool__parse_server_address(const ENetPacket* packet);
 
 void send_systime_packet_unsequenced(ENetPeer *peer);

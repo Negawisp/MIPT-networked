@@ -61,6 +61,18 @@ void send_player_list_packet(ENetPeer *peer, std::map<ENetAddress, PlayerData, A
   enet_peer_send(peer, 1, packet);
 }
 
+void send_new_player_packet(ENetPeer *peer, PlayerData player_data) {
+  std::string message;
+  message.push_back(FLAG_IS_NEW_PLAYER);
+  message.append("New player connected:\n");
+  message.append("Id: ").append(std::to_string(player_data.id))
+         .append(", Name: ").append(player_data.name)
+         .append("\n");
+  
+  ENetPacket *packet = enet_packet_create(message.data(), message.size() + 1, ENET_PACKET_FLAG_RELIABLE);
+  enet_peer_send(peer, 1, packet);
+} 
+
 void send_ping_list_packet(ENetPeer *peer, std::map<ENetAddress, PlayerData, AddrComparator> player_datas) {
   std::string message;
   message.push_back(FLAG_IS_PING_LIST);
@@ -102,8 +114,11 @@ int main(int argc, const char **argv)
   std::vector<ENetPeer*> player_peers;
   std::map<ENetAddress, PlayerData, AddrComparator> player_datas;
 
+
   while (true)
   {
+    uint32_t cur_time = enet_time_get();
+
     ENetEvent event;
     while (enet_host_service(server_host, &event, 10) > 0)
     {
@@ -117,8 +132,12 @@ int main(int argc, const char **argv)
 
         player_data.id = player_datas.size();
         player_data.name = generate_name();
-        player_datas[event.peer->address] = player_data;
 
+        for (auto player_peer : player_peers) {
+          send_new_player_packet(player_peer, player_data);
+        }
+
+        player_datas[event.peer->address] = player_data;
         player_peers.push_back(event.peer);
 
         break;
@@ -134,7 +153,7 @@ int main(int argc, const char **argv)
         if (enet_tool__is_systime(event.packet)) {
           uint8_t* data = event.packet->data + 1;
           uint32_t client_time = *(uint32_t*)data;
-          printf("Client time: %u (diff=%u)\n", client_time, enet_time_get() - client_time);
+          printf("Client time: %u (diff=%d)\n", client_time, (int32_t)(client_time - cur_time));
         }
 
         printf("\n");
@@ -147,7 +166,6 @@ int main(int argc, const char **argv)
     }
 
     // Sending systime
-    uint32_t cur_time = enet_time_get();
     if (cur_time > systime_send_timestamp)
     {
       systime_send_timestamp = cur_time + SYSTIME_SEND_INTERVAL_MS;

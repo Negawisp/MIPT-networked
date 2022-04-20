@@ -21,6 +21,9 @@ int main(int argc, const char **argv)
 {
   bool is_started = false;
 
+  uint32_t time_start = enet_time_get();
+  uint32_t systime_send_timestamp = time_start;
+
   if (enet_initialize() != 0)
   {
     printf("Cannot init ENet");
@@ -76,6 +79,17 @@ int main(int argc, const char **argv)
       default:
         break;
       };
+    }
+
+
+    // Sending systime
+    uint32_t cur_time = enet_time_get();
+    if (cur_time > systime_send_timestamp)
+    {
+      systime_send_timestamp = cur_time + SYSTIME_SEND_INTERVAL_MS * 10;
+      for (auto player_peer : clients) {
+        send_systime_packet_unsequenced(player_peer);
+      }
     }
   }
 
