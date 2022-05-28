@@ -3,12 +3,22 @@
 #include "entity.h"
 #include "protocol.h"
 #include "mathUtils.h"
+#include <thread>
 #include <stdlib.h>
 #include <vector>
 #include <map>
 
+static std::map<uint8_t, uint32_t> client_keys;
 static std::vector<Entity> entities;
 static std::map<uint16_t, ENetPeer*> controlledMap;
+
+void on_client_connected(ENetPeer* peer) {
+  uint8_t clients_count = static_cast<uint8_t>(client_keys.size());
+  Key_t key = generate_key();
+  client_keys[clients_count] = key;
+
+  send_signature_data(peer, SignatureData{clients_count, key});
+}
 
 void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 {
@@ -44,7 +54,9 @@ void on_input(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
   float thr = 0.f; float steer = 0.f;
-  deserialize_entity_input(packet, eid, thr, steer);
+  if (false == deserialize_entity_input(packet, client_keys, eid, thr, steer)) {
+    return;
+  }
   for (Entity &e : entities)
     if (e.eid == eid)
     {
@@ -86,6 +98,7 @@ int main(int argc, const char **argv)
       {
       case ENET_EVENT_TYPE_CONNECT:
         printf("Connection with %x:%u established\n", event.peer->address.host, event.peer->address.port);
+        on_client_connected(event.peer);
         break;
       case ENET_EVENT_TYPE_RECEIVE:
         switch (get_packet_type(event.packet))
@@ -117,7 +130,7 @@ int main(int argc, const char **argv)
         send_snapshot(peer, e.eid, e.x, e.y, e.ori);
       }
     }
-    usleep(10000);
+    std::this_thread::sleep_for(std::chrono::microseconds(123));
   }
 
   enet_host_destroy(server);

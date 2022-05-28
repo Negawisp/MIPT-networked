@@ -23,5 +23,22 @@ inline float sign(float in)
   return in > 0.f ? 1.f : in < 0.f ? -1.f : 0.f;
 }
 
+/**
+* to > from.
+* r < from - to.
+*/
+template<typename T>
+inline T rotr(T X, uint8_t from, uint8_t to, uint8_t r)
+{
+    T ones = ~(X & 0);
+    T mask_unchanged = (~(ones >> from)) | (ones >> to);
+    T mask_changed = ~mask_unchanged;
+    T unchanged = X & mask_unchanged;
+    T changed = X & mask_changed;
+    changed = (changed >> r) | (changed << (to - from - r));
+    changed = changed & mask_changed;
+    return changed | unchanged;
+}
+
 constexpr float PI = 3.141592654f;
 

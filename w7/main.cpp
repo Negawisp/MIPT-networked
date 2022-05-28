@@ -18,9 +18,21 @@
 #include "entity.h"
 #include "protocol.h"
 
+static bool sign_correctly = true;
 
 static std::vector<Entity> entities;
 static uint16_t my_entity = invalid_entity;
+
+static uint8_t my_id = -1;
+static uint32_t my_signature_key = 0;
+
+void on_signature_data_received(ENetPacket* packet)
+{
+  SignatureData d;
+  deserialize_signature_data(packet, d);
+  my_id = d.client_id;
+  my_signature_key = d.key;
+}
 
 void on_new_entity_packet(ENetPacket *packet)
 {
@@ -100,6 +112,9 @@ int main(int argc, const char **argv)
   float dt = 0.f;
   while (!app_should_close())
   {
+    if (app_keypressed(GLFW_KEY_Q))
+      sign_correctly = !sign_correctly;
+
     ENetEvent event;
     while (enet_host_service(client, &event, 0) > 0)
     {
@@ -113,6 +128,9 @@ int main(int argc, const char **argv)
       case ENET_EVENT_TYPE_RECEIVE:
         switch (get_packet_type(event.packet))
         {
+        case E_SERVER_TO_CLIENT_SIGNATURE_KEY:
+          on_signature_data_received(event.packet);
+          break;
         case E_SERVER_TO_CLIENT_NEW_ENTITY:
           on_new_entity_packet(event.packet);
           break;
@@ -143,7 +161,7 @@ int main(int argc, const char **argv)
           float steer = (left ? 1.f : 0.f) + (right ? -1.f : 0.f);
 
           // Send
-          send_entity_input(serverPeer, my_entity, thr, steer);
+          send_entity_input(sign_correctly, serverPeer, my_id, my_signature_key, my_entity, thr, steer);
         }
     }
 
