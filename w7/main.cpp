@@ -9,22 +9,25 @@
 #include "app.h"
 #include <enet/enet.h>
 #include <math.h>
+#include <ctime>  
+#include <vector>
 
 //for scancodes
 #include <GLFW/glfw3.h>
 
-
-#include <vector>
+#include "quantisation.h"
+#include "compression.h"
 #include "entity.h"
 #include "protocol.h"
 
 static bool sign_correctly = true;
 
-static std::vector<Entity> entities;
+static std::map<uint16_t, Entity> entities;
 static uint16_t my_entity = invalid_entity;
 
 static uint8_t my_id = -1;
 static uint32_t my_signature_key = 0;
+static Snapshot ref_snapshot{};
 
 void on_signature_data_received(ENetPacket* packet)
 {
@@ -38,11 +41,10 @@ void on_new_entity_packet(ENetPacket *packet)
 {
   Entity newEntity;
   deserialize_new_entity(packet, newEntity);
-  // TODO: Direct adressing, of course!
-  for (const Entity &e : entities)
-    if (e.eid == newEntity.eid)
+
+  if (0 < entities.count(newEntity.eid))
       return; // don't need to do anything, we already have entity
-  entities.push_back(newEntity);
+  entities[newEntity.eid] = newEntity;
 }
 
 void on_set_controlled_entity(ENetPacket *packet)
@@ -50,19 +52,27 @@ void on_set_controlled_entity(ENetPacket *packet)
   deserialize_set_controlled_entity(packet, my_entity);
 }
 
+void on_ref_snapshot(ENetPacket* packet)
+{
+  uint16_t eid = invalid_entity;
+  EntitySnapshot new_snapshot;
+  deserialize_ref_snapshot(packet, eid, new_snapshot);
+
+  ref_snapshot.entity_data[eid] = new_snapshot;
+}
+
 void on_snapshot(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
   float x = 0.f; float y = 0.f; float ori = 0.f;
-  deserialize_snapshot(packet, eid, x, y, ori);
-  // TODO: Direct adressing, of course!
-  for (Entity &e : entities)
-    if (e.eid == eid)
-    {
-      e.x = x;
-      e.y = y;
-      e.ori = ori;
-    }
+  deserialize_snapshot(packet, ref_snapshot, eid, x, y, ori);
+
+  if (ref_snapshot.entity_data.count(eid) == 0) {
+      return;
+  }
+  entities[eid].x = x;
+  entities[eid].y = y;
+  entities[eid].ori = ori;
 }
 
 int main(int argc, const char **argv)
@@ -112,8 +122,15 @@ int main(int argc, const char **argv)
   float dt = 0.f;
   while (!app_should_close())
   {
-    if (app_keypressed(GLFW_KEY_Q))
+    time_t t;
+    static time_t q_pressed_t = 0;
+    static time_t q_pressed_timeout = 1;
+    time(&t);
+
+    if (app_keypressed(GLFW_KEY_Q) && t - q_pressed_t > q_pressed_timeout) {
+      q_pressed_t = t;
       sign_correctly = !sign_correctly;
+    }
 
     ENetEvent event;
     while (enet_host_service(client, &event, 0) > 0)
@@ -137,6 +154,9 @@ int main(int argc, const char **argv)
         case E_SERVER_TO_CLIENT_SET_CONTROLLED_ENTITY:
           on_set_controlled_entity(event.packet);
           break;
+        case E_SERVER_TO_CLIENT_REF_SNAPSHOT:
+          on_ref_snapshot(event.packet);
+          break;
         case E_SERVER_TO_CLIENT_SNAPSHOT:
           on_snapshot(event.packet);
           break;
@@ -153,8 +173,8 @@ int main(int argc, const char **argv)
       bool up = app_keypressed(GLFW_KEY_UP);
       bool down = app_keypressed(GLFW_KEY_DOWN);
       // TODO: Direct adressing, of course!
-      for (Entity &e : entities)
-        if (e.eid == my_entity)
+      for (auto& e : entities)
+        if (e.second.eid == my_entity)
         {
           // Update
           float thr = (up ? 1.f : 0.f) + (down ? -1.f : 0.f);
@@ -179,13 +199,13 @@ int main(int argc, const char **argv)
 
     dde.begin(0);
 
-    for (const Entity &e : entities)
+    for (const auto &e : entities)
     {
       dde.push();
 
-        dde.setColor(e.color);
-        bx::Vec3 dir = {cosf(e.ori), sinf(e.ori), 0.f};
-        bx::Vec3 pos = {e.x, e.y, -0.01f};
+        dde.setColor(e.second.color);
+        bx::Vec3 dir = {cosf(e.second.ori), sinf(e.second.ori), 0.f};
+        bx::Vec3 pos = {e.second.x, e.second.y, -0.01f};
         dde.drawCapsule(sub(pos, dir), add(pos, dir), 1.f);
 
       dde.pop();

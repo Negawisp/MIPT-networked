@@ -2,34 +2,47 @@
 #include <iostream>
 #include "entity.h"
 #include "protocol.h"
+#include "compression.h"
 #include "mathUtils.h"
 #include <thread>
 #include <stdlib.h>
 #include <vector>
 #include <map>
 
-static std::map<uint8_t, uint32_t> client_keys;
-static std::vector<Entity> entities;
+static Snapshot snapshot;
+static uint32_t snapshot_updated_timestamp = 0;
+static const uint32_t SNAPSHOT_UPDATE_PERIOD = 2000;
+
+static std::map<uint8_t, PlayerData> player_data;
+static std::map<uint16_t, Entity> entities;
 static std::map<uint16_t, ENetPeer*> controlledMap;
 
 void on_client_connected(ENetPeer* peer) {
-  uint8_t clients_count = static_cast<uint8_t>(client_keys.size());
+  uint8_t clients_count = static_cast<uint8_t>(player_data.size());
   Key_t key = generate_key();
-  client_keys[clients_count] = key;
 
-  send_signature_data(peer, SignatureData{clients_count, key});
+  player_data[clients_count] = PlayerData{
+    clients_count,
+    peer,
+    key,
+    SNAPSHOT_TIME_NOT_SET,
+    SNAPSHOT_TIME_NOT_SET,
+    false
+  };
+
+  send_initial_data(peer, SignatureData{clients_count, key});
 }
 
 void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 {
   // send all entities
-  for (const Entity &ent : entities)
-    send_new_entity(peer, ent);
+  for (const auto &ent : entities)
+    send_new_entity(peer, ent.second);
 
   // find max eid
   uint16_t maxEid = entities.empty() ? invalid_entity : entities[0].eid;
-  for (const Entity &e : entities)
-    maxEid = std::max(maxEid, e.eid);
+  for (const auto &e : entities)
+    maxEid = std::max(maxEid, e.second.eid);
   uint16_t newEid = maxEid + 1;
   uint32_t color = 0xff000000 +
                    0x00440000 * (rand() % 5) +
@@ -38,7 +51,7 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
   float x = (rand() % 4) * 2.f;
   float y = (rand() % 4) * 2.f;
   Entity ent = {color, x, y, 0.f, (rand() / RAND_MAX) * 3.141592654f, 0.f, 0.f, newEid};
-  entities.push_back(ent);
+  entities[newEid] = (ent);
 
   controlledMap[newEid] = peer;
 
@@ -54,15 +67,11 @@ void on_input(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
   float thr = 0.f; float steer = 0.f;
-  if (false == deserialize_entity_input(packet, client_keys, eid, thr, steer)) {
+  if (false == deserialize_entity_input(packet, player_data, eid, thr, steer)) {
     return;
   }
-  for (Entity &e : entities)
-    if (e.eid == eid)
-    {
-      e.thr = thr;
-      e.steer = steer;
-    }
+  entities[eid].thr = thr;
+  entities[eid].steer = steer;
 }
 
 int main(int argc, const char **argv)
@@ -91,6 +100,7 @@ int main(int argc, const char **argv)
     uint32_t curTime = enet_time_get();
     float dt = (curTime - lastTime) * 0.001f;
     lastTime = curTime;
+
     ENetEvent event;
     while (enet_host_service(server, &event, 0) > 0)
     {
@@ -116,18 +126,31 @@ int main(int argc, const char **argv)
         break;
       };
     }
+
+    bool should_send_ref = false;
+    if (curTime > snapshot_updated_timestamp) {
+      snapshot_updated_timestamp = curTime + SNAPSHOT_UPDATE_PERIOD;
+      update_snapshot(snapshot, entities);
+      should_send_ref = true;
+    }
+
     static int t = 0;
-    for (Entity &e : entities)
+    for (auto &e : entities)
     {
       // simulate
-      simulate_entity(e, dt);
+      simulate_entity(e.second, dt);
       // send
-      for (size_t i = 0; i < server->peerCount; ++i)
+
+      if (should_send_ref) {
+        for (auto& player_pair : player_data)
+        {
+          send_ref_snapshot(player_pair.second, e.first, snapshot.entity_data[e.first]);
+        }
+      }
+
+      for (auto& player_pair : player_data)
       {
-        ENetPeer *peer = &server->peers[i];
-        // skip this here in this implementation
-        //if (controlledMap[e.eid] != peer)
-        send_snapshot(peer, e.eid, e.x, e.y, e.ori);
+        send_snapshot(player_pair.second, snapshot.entity_data[e.first], e.first, e.second.x, e.second.y, e.second.ori);
       }
     }
     std::this_thread::sleep_for(std::chrono::microseconds(123));
